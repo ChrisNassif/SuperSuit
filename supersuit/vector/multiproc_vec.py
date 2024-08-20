@@ -2,6 +2,7 @@ import copy
 import multiprocessing as mp
 import time
 import traceback
+import psutil, os
 
 import gymnasium.vector
 import numpy as np
@@ -53,8 +54,13 @@ def numpy_deepcopy(buf):
 
 
 def async_loop(
-    vec_env_constr, inpt_p, pipe, shared_obs, shared_rews, shared_terms, shared_truncs
+    cpu_index, vec_env_constr, inpt_p, pipe, shared_obs, shared_rews, shared_terms, shared_truncs
 ):
+    p = psutil.Process(os.getpid())
+    p.cpu_affinity([cpu_index])
+    print(f"Task is being processed by process id: {os.getpid()} on CPU core: {cpu_index}")
+
+
     inpt_p.close()
     try:
         vec_env = vec_env_constr()
@@ -98,6 +104,14 @@ def async_loop(
                 elif name == "env_is_wrapped":
                     comp_infos = vec_env.env_is_wrapped(data)
 
+                elif name == "env_method":
+                    method_name, method_args, indices, method_kwargs = data
+                    comp_infos = vec_env.env_method(method_name, *method_args, indices=indices, **method_kwargs)
+
+                # elif name == "compute_reward":
+                #     achieved_goal, desired_goal, info = data
+                #     comp_infos = vec_env.compute_reward(achieved_goal, desired_goal, info)
+
                 else:
                     raise AssertionError("bad tuple instruction name: " + name)
             elif instr == "render":
@@ -137,12 +151,19 @@ class ProcConcatVec(gymnasium.vector.VectorEnv):
 
         pipes = []
         procs = []
-        for constr in vec_env_constrs:
+        
+        num_cpu_cores = psutil.cpu_count(logical=True)
+        print(num_cpu_cores)
+        
+        for index, constr in enumerate(vec_env_constrs):
             inpt, outpt = mp.Pipe()
             constr = gymnasium.vector.async_vector_env.CloudpickleWrapper(constr)
+            
+            core_id = index % num_cpu_cores
             proc = mp.Process(
                 target=async_loop,
                 args=(
+                    core_id,
                     constr,
                     inpt,
                     outpt,
@@ -201,6 +222,20 @@ class ProcConcatVec(gymnasium.vector.VectorEnv):
             all_data.append(data)
         return all_data
 
+    def _receive_info_for_specific_environments(self, environment_indices):
+        all_data = []
+        for index, cin in enumerate(self.pipes):
+            if index not in environment_indices: continue
+
+            data = cin.recv()
+            if isinstance(data, tuple):
+                e, tb = data
+                print(tb)
+                raise e
+            all_data.append(data)
+        return all_data
+
+
     def step_wait(self):
         compressed_infos = self._receive_info()
         infos = decompress_info(self.num_envs, self.idx_starts, compressed_infos)
@@ -237,7 +272,7 @@ class ProcConcatVec(gymnasium.vector.VectorEnv):
         try:
             for pipe, proc in zip(self.pipes, self.procs):
                 if proc.is_alive():
-                    pipe.send(("close", None))
+                    pipe.send("close")
         except OSError:
             pass
         else:
@@ -255,6 +290,25 @@ class ProcConcatVec(gymnasium.vector.VectorEnv):
             if proc.is_alive():
                 proc.kill()
             pipe.close()
+
+
+    def env_method(self, method_name, *method_args, indices, **method_kwargs):
+
+        for index, pipe in enumerate(self.pipes):
+            if index not in indices: continue
+
+            pipe.send(("env_method", [method_name, method_args, indices, method_kwargs]))
+
+        returns = info = self._receive_info_for_specific_environments(indices)
+        return np.array(returns)
+
+
+    # def compute_reward(self, achieved_goal, desired_goal, indices=None):
+    #     print(f'indices: {indices}')
+    #     self.pipes[0].send("compute_reward")
+
+    #     info = self._receive_info()
+    #     print(f"info: {info}")
 
     def env_is_wrapped(self, wrapper_class, indices=None):
         for i, pipe in enumerate(self.pipes):

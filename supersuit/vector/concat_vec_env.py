@@ -105,6 +105,22 @@ class ConcatVecEnv(gymnasium.vector.VectorEnv):
         for vec_env in self.vec_envs:
             vec_env.close()
 
+    def env_method(self, method_name, *method_args, indices, **method_kwargs):
+
+        if method_name == "compute_reward": 
+            return [self.vec_envs[0].compute_reward(*method_args, **method_kwargs),]
+        else:
+            raise Exception("Method name not found when calling env_method")
+
+
+
+    # def compute_reward(self, achieved_goal, desired_goal, info):
+    #     print(f"achieved_goal: {achieved_goal}")
+    #     print(f"desired_goal: {desired_goal}")
+    #     print(f"info: {info}")
+    #     return self.vec_envs[0].compute_reward(achieved_goal, desired_goal, info) 
+        
+
     def env_is_wrapped(self, wrapper_class):
         return sum(
             [sub_venv.env_is_wrapped(wrapper_class) for sub_venv in self.vec_envs], []

@@ -30,6 +30,9 @@ class SB3VecEnvWrapper(VecEnvWrapper):
         )
         return observations, rewards, dones, infos
 
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        return self.venv.compute_reward(achieved_goal, desired_goal, info)
+
     def env_is_wrapped(self, wrapper_class, indices=None):
         # ignores indices
         return self.venv.env_is_wrapped(wrapper_class)

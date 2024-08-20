@@ -108,6 +108,9 @@ class MarkovVectorEnv(gymnasium.vector.VectorEnv):
     def render(self):
         return self.par_env.render()
 
+    def compute_reward(self, achieved_goal, desired_goal, info):
+        return self.par_env.compute_reward(achieved_goal, desired_goal, info)
+        
     def close(self):
         return self.par_env.close()
 
