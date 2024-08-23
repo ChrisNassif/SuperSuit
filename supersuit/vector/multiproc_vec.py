@@ -3,6 +3,7 @@ import multiprocessing as mp
 import time
 import traceback
 import psutil, os
+from typing import Optional, Sequence, Union
 
 import gymnasium.vector
 import numpy as np
@@ -292,6 +293,11 @@ class ProcConcatVec(gymnasium.vector.VectorEnv):
             pipe.close()
 
 
+    def seed(self, seed: Optional[int] = None):
+        print('IN SEED BEFORE CALLING RESET')
+ 
+        return self.reset(seed)
+    
     def env_method(self, method_name, *method_args, indices, **method_kwargs):
 
         for index, pipe in enumerate(self.pipes):
